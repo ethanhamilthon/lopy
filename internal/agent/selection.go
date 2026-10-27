@@ -69,6 +69,7 @@ func (a *Agent) Select(provider, model, effort string) error {
 	}
 	return nil
 }
+
 // ModelChoice is a model offered by one configured provider.
 type ModelChoice struct{ Provider, Model string }
 

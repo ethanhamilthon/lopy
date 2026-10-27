@@ -49,6 +49,7 @@ type model struct {
 	inputValue              string
 	inputWidth, inputHeight int
 	contextInput            *int64
+	latest                  string
 	menuKind                string
 	menu                    []command
 	effort, menuGeneration  int
@@ -91,7 +92,7 @@ type followerTick struct{}
 func followerPulse() tea.Cmd {
 	return tea.Tick(time.Second, func(time.Time) tea.Msg { return followerTick{} })
 }
-func (m model) Init() tea.Cmd { return tea.Batch(textarea.Blink, followerPulse()) }
+func (m model) Init() tea.Cmd { return tea.Batch(textarea.Blink, followerPulse(), checkUpdate()) }
 func (m model) wait() tea.Cmd { ch := m.events; return func() tea.Msg { return <-ch } }
 func (m *model) resizeInput() {
 	value, width, height := m.input.Value(), max(1, m.width-2), max(1, m.height/2)
@@ -207,6 +208,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.refresh(true)
+		return m, nil
+	case updateCheckMsg:
+		if v.latest != "" && v.latest != m.latest {
+			m.latest = v.latest
+			m.refresh(follow)
+		}
 		return m, nil
 	case workingTick:
 		if !m.busy || !v.started.Equal(m.workingSince) {

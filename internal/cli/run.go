@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"lopy/internal/agent"
+	"lopy/internal/selfupdate"
 	"lopy/internal/tui"
 )
 
@@ -22,6 +23,15 @@ func Run(ctx context.Context, args []string, in io.Reader, out, diagnostics io.W
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	if len(args) > 0 && !notify {
+		switch args[0] {
+		case "update":
+			return selfupdate.Run(ctx, tui.Version, args[1:], out)
+		case "version":
+			fmt.Fprintln(out, strings.TrimPrefix(tui.Version, "v"))
+			return nil
+		}
+	}
 	flags := flag.NewFlagSet("lopy", flag.ContinueOnError)
 	flags.SetOutput(diagnostics)
 	prompt := flags.String("prompt", "", "run one turn without TUI")

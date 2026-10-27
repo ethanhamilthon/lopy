@@ -22,6 +22,24 @@ api_key = "another-key"
 
 Set `LOPY_HOME=/path/to/.lopy` to use that directory **directly** for settings, prompts, and history. The default is `~/.lopy`; relative paths are resolved from the working directory. This does not change the project working directory. `/new` reloads settings and prompts. Configuration may contain API keys; keep it private.
 
+## Install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ethanhamilthon/lopy/main/scripts/install.sh | sh
+```
+
+The script downloads the latest GitHub release for the current OS and architecture, verifies it against `checksums.txt`, and installs `lopy` into `$LOPY_BINDIR` (default: `~/.local/bin`). Set `LOPY_VERSION=v0.2.2` to pin a release.
+
+## Update
+
+```sh
+lopy update          # download and replace the running binary
+lopy update -check   # only report the latest release
+lopy version
+```
+
+The start screen checks GitHub once every six hours in the background and shows `vX.Y.Z available — run lopy update` when a newer release exists. Set `LOPY_NO_UPDATE_CHECK=1` to disable that check; the cache lives in `$LOPY_HOME/update.json`.
+
 ## Run
 
 ```sh
@@ -29,7 +47,7 @@ CGO_ENABLED=0 go build -o lopy .
 ./lopy
 ```
 
-Build requires Go 1.26+. Monty is pinned through `github.com/ewhauser/gomonty v0.0.14` (upstream Monty commit `c9802b5f30d11fecf9f153feb1dfdab3abda070e`). Normal builds use bundled native libraries through purego, without Rust, CPython or cgo. Run from the project directory the agent should work in. A single non-interactive turn is also supported:
+Build requires Go 1.26+ (the release workflow uses the `go` directive in `go.mod`). Monty is pinned through `github.com/ewhauser/gomonty v0.0.14` (upstream Monty commit `c9802b5f30d11fecf9f153feb1dfdab3abda070e`). Normal builds use bundled native libraries through purego, without Rust, CPython or cgo. Run from the project directory the agent should work in. A single non-interactive turn is also supported:
 
 ```sh
 ./lopy -prompt 'Inspect this project'

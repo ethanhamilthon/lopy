@@ -161,6 +161,9 @@ func (m *model) timeline() string {
 	var out strings.Builder
 	out.WriteString(lipgloss.NewStyle().Foreground(cyan).Bold(true).Render("lopy. minimal coding agent."))
 	out.WriteString(lipgloss.NewStyle().Foreground(muted).Render(" v" + strings.TrimPrefix(Version, "v")))
+	if m.latest != "" {
+		out.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#e5c07b")).Render(" · v" + strings.TrimPrefix(m.latest, "v") + " available — run lopy update"))
+	}
 	out.WriteString("\n" + lipgloss.NewStyle().Foreground(muted).Render("Enter to send · Shift+Enter for newline · / for commands") + "\n")
 	if s := m.a.Settings(); s.Provider == "" || s.Model == "" {
 		out.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#e5c07b")).Render(m.setupHint()) + "\n")
