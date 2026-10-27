@@ -1,0 +1,200 @@
+package tui
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"strings"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+
+	"lopy/internal/agent"
+)
+
+// Version is shown on the start screen; main sets it from the VERSION file.
+var Version = "dev"
+
+// Run runs the terminal interface until the user exits.
+// The caller remains responsible for closing the agent and releasing session ownership.
+func Run(a *agent.Agent, cwd string) error {
+	keyboard := keyboardProtocol{}
+	defer keyboard.close()
+	final, err := tea.NewProgram(newModel(a, cwd), tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithFilter(keyboard.filter)).Run()
+	keyboard.close()
+	if m, ok := final.(model); ok {
+		if m.cancel != nil {
+			m.cancel()
+			for event := range m.events {
+				if event.Kind == "done" {
+					break
+				}
+			}
+		}
+		if m.menuCancel != nil {
+			m.menuCancel()
+		}
+	}
+	return err
+}
+
+type workingTick struct{ started time.Time }
+
+func workingPulse(started time.Time) tea.Cmd {
+	return tea.Tick(80*time.Millisecond, func(time.Time) tea.Msg { return workingTick{started} })
+}
+func (m *model) requestCancel() {
+	m.cancelling = true
+	if m.cancel != nil {
+		m.cancel()
+	}
+	m.refresh(false)
+}
+func (m *model) queueSteering(text string) {
+	if m.cancelling {
+		m.add("info", "Cancellation in progress; your message remains in the input.")
+		return
+	}
+	input := agent.Input{Text: text, Images: m.images}
+	if m.steering.PushInput(input) {
+		m.queued = append(m.queued, input)
+		m.images = nil
+		m.input.Reset()
+	} else {
+		m.add("info", "Steering queue is full; your message remains in the input.")
+	}
+}
+func (m model) workingBlock() string {
+	var out strings.Builder
+	for _, input := range m.queued {
+		text := input.Display()
+		row := "  queued · " + strings.ReplaceAll(ansi.Strip(text), "\n", " ")
+		out.WriteString(lipgloss.NewStyle().Foreground(muted).Render(ansi.Truncate(row, max(1, m.width), "…")) + "\n")
+	}
+	if m.busy {
+		frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+		elapsed := max(time.Duration(0), time.Since(m.workingSince))
+		label := "working"
+		if m.cancelling {
+			label = "cancelling"
+		}
+		line := "  " + lipgloss.NewStyle().Foreground(inputBlue).Render(frames[int(elapsed/(80*time.Millisecond))%len(frames)]) +
+			lipgloss.NewStyle().Foreground(muted).Render(fmt.Sprintf(" %s · %s", label, formatDuration(elapsed)))
+		out.WriteString(ansi.Truncate(line, max(1, m.width), "…") + "\n\n")
+	}
+	return out.String()
+}
+
+func (m model) startTurn(text string) (tea.Model, tea.Cmd) {
+	m.a.RememberDisplay(m.entries)
+	submission := agent.Input{Text: text, Images: m.images}
+	m.turnImages, m.images = m.images, nil
+	m.input.Reset()
+	m.hideCompletion = false
+	m.busy = true
+	m.cancelling = false
+	m.workingSince = time.Now()
+	m.steering = &agent.Steering{}
+	m.queued = nil
+	m.retryInput = ""
+	m.events = make(chan agent.Event, 64)
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancel = cancel
+	ch, a, steering := m.events, m.a, m.steering
+	go func() {
+		defer cancel()
+		err := a.RunInput(ctx, submission, func(e agent.Event) { ch <- e }, steering)
+		var initialization *agent.InitializationError
+		if errors.As(err, &initialization) {
+			ch <- agent.Event{Kind: "retry", Text: text}
+		}
+		if errors.Is(err, context.Canceled) {
+			ch <- agent.Event{Kind: "info", Text: "Turn cancelled."}
+		}
+		message := ""
+		if err != nil {
+			message = err.Error()
+		}
+		ch <- agent.Event{Kind: "done", Text: message}
+	}()
+	m.refresh(true)
+	return m, tea.Batch(m.wait(), workingPulse(m.workingSince))
+}
+func (m *model) applyAgentEvent(e agent.Event) {
+	if e.Kind == "user" && e.Steering && len(m.queued) > 0 && m.queued[0].Display() == e.Text {
+		m.queued = m.queued[1:]
+	}
+	if e.Meta != nil && e.Meta.RequestID != "" {
+		m.contextInput = e.Meta.ContextInput
+	}
+	m.entries = agent.ApplyEvent(m.entries, e)
+}
+
+// NewEventPrinter prints headless deltas immediately and fills missing snapshot content.
+// Repeated added/done/completed snapshots must not duplicate the answer.
+func NewEventPrinter(stdout, stderr io.Writer) func(agent.Event) {
+	streamed := map[string]string{}
+	ended := map[string]bool{}
+	lastID := ""
+	var lastOut io.Writer
+	boundary := func(id string, out io.Writer) {
+		if lastOut != nil && lastID != id && !ended[lastID] {
+			fmt.Fprintln(lastOut)
+			ended[lastID] = true
+		}
+		lastID, lastOut = id, out
+	}
+	return func(e agent.Event) {
+		if e.Provisional || e.Kind == "user" {
+			return
+		}
+		switch e.Kind {
+		case "delta", "refusal_delta", "reasoning_delta":
+			out := stdout
+			if e.Kind == "reasoning_delta" {
+				out = stderr
+			}
+			boundary(e.ID, out)
+			fmt.Fprint(out, e.Text)
+			streamed[e.ID] += e.Text
+			ended[e.ID] = false
+		case "assistant", "reasoning":
+			out := stdout
+			if e.Kind == "reasoning" {
+				out = stderr
+			}
+			boundary(e.ID, out)
+			prior := streamed[e.ID]
+			suffix := e.Text
+			if strings.HasPrefix(e.Text, prior) {
+				suffix = strings.TrimPrefix(e.Text, prior)
+			} else if prior != "" {
+				fmt.Fprintln(out)
+			}
+			if suffix != "" {
+				fmt.Fprint(out, suffix)
+				ended[e.ID] = false
+			}
+			streamed[e.ID] = e.Text
+			if (e.Meta != nil || e.ID == "") && !ended[e.ID] {
+				fmt.Fprintln(out)
+				ended[e.ID] = true
+			}
+		default:
+			if e.ID != "" {
+				if prior, ok := streamed[e.ID]; ok && prior == e.Text {
+					return
+				}
+				streamed[e.ID] = e.Text
+			}
+			if lastOut != nil && !ended[lastID] {
+				fmt.Fprintln(lastOut)
+				ended[lastID] = true
+			}
+			fmt.Fprintln(stderr, e.Text)
+		}
+	}
+}

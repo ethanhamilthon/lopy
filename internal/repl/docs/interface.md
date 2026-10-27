@@ -1,0 +1,24 @@
+# Interface
+
+Commands: /new starts a new chat; /resume selects a project session; /cancel
+cancels work; /quit saves/exits; /help shows commands and shortcuts.
+Up/Down navigates completions, Tab completes, and Enter immediately executes
+the selected visible completion. Without a matching visible completion,
+slash-prefixed text is an ordinary message. Esc dismisses completions.
+Otherwise Enter submits. Alt+Enter or Ctrl+J
+inserts a newline; Shift+Enter is supported through compatible terminal
+sequences. PgUp/PgDn scroll the timeline; Ctrl+Home/End jumps to its ends.
+Ctrl+C cancels active work or exits when idle. Up with an empty composer can
+recall pending steering. The composer scrolls with the timeline.
+
+settings.toml controls visible body rows through max_code_lines,
+max_result_lines, and max_thinking_lines; zero hides that block. Complete data
+remains in history. Code argument streaming previews code generation, not tool
+stdout while it runs. The status bar context estimate is the latest request's
+input-token count, including cached input, not accumulated usage or capacity.
+
+lopy -prompt 'your request' runs one turn without the TUI. Diagnostics go to
+stderr; answer text goes to stdout. /model selects a model and effort; /login selects or creates providers.
+docs("models") explains both. docs("headless") covers stdio/JSONL, resume,
+external notifications and read-only followers. docs("clipboard") describes image attachments and terminal shortcut limitations;
+the composer shows labels, never image pixels.
