@@ -216,8 +216,11 @@ compact_keep_turns = 4        # turns kept verbatim
 max_agent_steps = 0           # model/tool round trips per turn; 0 means no limit
 ```
 
-The estimate charges 4 bytes per token and 1,200 tokens per image; the status bar keeps
-showing the provider's real input-token count. Before a request that would exceed the
+The estimate charges 4 bytes per token and 1,200 tokens per image; inline base64 image
+payloads are excluded from the byte count so one screenshot cannot trigger compaction on
+its own. The status bar keeps showing the provider's real input-token count. If the kept
+turns alone exceed the budget, lopy reports it instead of compacting again on every
+request, and an existing `<compact_summary>` is never summarized a second time. Before a request that would exceed the
 budget, everything older than the last `compact_keep_turns` turns is summarized into one
 `<compact_summary>` item, using the same system prompt and prefix as normal turns. Cuts
 happen only at user-message boundaries, so a tool call never loses its output. If the

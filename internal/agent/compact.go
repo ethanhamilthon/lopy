@@ -23,14 +23,36 @@ const (
 const summaryInstruction = "Summarize this conversation so work can continue. " +
 	"Keep decisions, file paths, commands, results and open questions. Do not use tools."
 
+// stripDataURLs drops inline base64 payloads so an image is charged a fixed cost
+// instead of megabytes of encoded pixels.
+func stripDataURLs(text string) string {
+	var out strings.Builder
+	for {
+		start := strings.Index(text, `"data:`)
+		if start < 0 {
+			break
+		}
+		end := strings.IndexByte(text[start+6:], '"')
+		if end < 0 {
+			break
+		}
+		out.WriteString(text[:start+1])
+		out.WriteString("data:image")
+		text = text[start+6+end:]
+	}
+	out.WriteString(text)
+	return out.String()
+}
+
 // estimateTokens approximates the prompt size of the whole history.
 func estimateTokens(history []json.RawMessage) int64 {
 	var total int64
 	for _, item := range history {
-		if strings.Contains(string(item), "input_image") {
+		text := stripDataURLs(string(item))
+		if strings.Contains(text, "input_image") {
 			total += imageTokens
 		}
-		total += int64(len(item)) / tokenBytes
+		total += int64(len(text)) / tokenBytes
 	}
 	return total
 }
@@ -117,7 +139,9 @@ func (a *Agent) summarize(ctx context.Context, old []json.RawMessage, prompt str
 func (a *Agent) Compact(ctx context.Context, prompt string) (string, error) {
 	keep := max(1, a.settings.CompactKeepTurns)
 	cut := turnStart(a.History, keep)
-	if cut == 0 {
+	// Compacting an existing summary would replace it with another summary.
+	// json.Marshal escapes "<", so the marker is matched without the brackets.
+	if cut == 0 || cut == 1 && strings.Contains(string(a.History[0]), "compact_summary") {
 		return "Nothing to compact.", nil
 	}
 	old := append([]json.RawMessage(nil), a.History[:cut]...)
@@ -149,6 +173,9 @@ func (a *Agent) compactIfNeeded(ctx context.Context, emit func(Event)) {
 		return
 	}
 	emit(Event{Kind: "info", Text: result})
+	if estimateTokens(a.History) > limit {
+		emit(Event{Kind: "notice", Text: "Compaction could not reach max_context_tokens; raise it to leave room for the kept turns."})
+	}
 }
 
 // Reload re-reads settings and prompts and restarts Monty while keeping the history.

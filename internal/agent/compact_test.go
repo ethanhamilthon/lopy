@@ -53,7 +53,7 @@ func TestCompactKeepsTailAndSummary(t *testing.T) {
 	if len(a.History) != len(tail)+1 {
 		t.Fatalf("history length = %d, want %d", len(a.History), len(tail)+1)
 	}
-	if !strings.Contains(string(a.History[0]), `\u003ccompact_summary\u003e`) {
+	if !strings.Contains(string(a.History[0]), "compact_summary") {
 		t.Fatalf("first item = %s", a.History[0])
 	}
 	for i := range tail {
@@ -187,4 +187,33 @@ func summaryAgent(t *testing.T, summary http.HandlerFunc) (*Agent, func()) {
 func writeSummary(w http.ResponseWriter, text string) {
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprintf(w, `{"id":"r","output":[{"type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":%q,"annotations":[]}]}]}`, text)
+}
+
+func TestEstimateTokensChargesImagesOnce(t *testing.T) {
+	payload := strings.Repeat("A", 400*1024)
+	history := []json.RawMessage{
+		raw(map[string]any{"role": "user", "content": []any{
+			map[string]any{"type": "input_text", "text": "look"},
+			map[string]any{"type": "input_image", "image_url": "data:image/png;base64," + payload, "detail": "auto"},
+		}}),
+	}
+	if got := estimateTokens(history); got > 5000 {
+		t.Fatalf("a 400 KiB image counted as %d tokens", got)
+	}
+	if got := estimateTokens(history); got < imageTokens/tokenBytes {
+		t.Fatalf("image not counted at all: %d", got)
+	}
+}
+
+func TestCompactSkipsExistingSummary(t *testing.T) {
+	a, closeAll := summaryAgent(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("an existing summary must not be summarized again")
+	})
+	defer closeAll()
+	a.History = append([]json.RawMessage{raw(map[string]any{"role": "user", "content": "<compact_summary>old</compact_summary>"})}, compactHistory(t, 4)...)
+	a.settings.CompactKeepTurns = 4
+	result, err := a.Compact(context.Background(), "")
+	if err != nil || result != "Nothing to compact." {
+		t.Fatalf("result = %q, err = %v", result, err)
+	}
 }
