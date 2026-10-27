@@ -18,9 +18,17 @@ recursion depth 1,000, and 16 KiB captured output (keeps first 8 KiB and last 8 
 the middle with a warning; slice or filter large strings in Python before printing).
 Cancellation/crashes lose state;
 a separate <notify> reports initialization/restarts before work continues.
-Builtins, collections, functions, f-strings and some safe library imports work.
-Do not assume full Python syntax or library support. No third-party packages,
-input(), del statements, or direct host filesystem/OS handler. Repr may differ from CPython.
+Builtins, lists, dicts, sets, tuples, functions and f-strings work.
+Importable modules, and only these: json, math, re, os, sys, pathlib, datetime, typing, asyncio.
+Every other import raises ModuleNotFoundError: collections, collections.abc, dataclasses, enum,
+itertools, functools, random, time, io, string, copy, heapq, textwrap, hashlib, base64, subprocess,
+socket, threading, logging, platform, tempfile, shutil, glob, decimal, fractions, statistics,
+traceback, argparse, unittest, contextlib. Third-party packages do not exist.
+The supported modules are partial: their OS-backed calls (Path.exists, os.environ, datetime.now)
+raise NotImplementedError because no host OS handler is provided — use sh, read, write, grep.
+Unsupported syntax: class definitions, del, @, input(), open(), print(..., file=). Build counters,
+deques and record types from dict, list and functions instead. Repr may differ from CPython.
+docs("runtime") has the full detail.
 Available host functions:
 - sh(command): run /bin/sh -c in the project directory with user filesystem/network/environment
   permissions; returns {stdout, stderr, returncode}. Check returncode and report failures.
