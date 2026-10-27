@@ -47,6 +47,12 @@ func (m *model) openPicker(kind string) tea.Cmd {
 		return modelChoices{generation, models, errs}
 	}
 }
+
+// fail reports a picker error inside the pickerKey contract.
+func (m *model) fail(err error) (tea.Model, tea.Cmd, bool) {
+	next, cmd := m.stop("error", err.Error())
+	return next, cmd, true
+}
 func (m *model) closePicker() {
 	m.pasteGeneration++
 	m.pasting = false
@@ -90,37 +96,24 @@ func (m model) pickerKey(key tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		}
 		if m.menuKind == "setup" {
 			value := strings.TrimSpace(m.input.Value())
-			if len(m.setup) == 2 { // API type is chosen from the list
-				matches := m.completions()
-				if len(matches) == 0 {
-					return m, nil, true
-				}
-				value = matches[m.selected%len(matches)].name
-			} else if value == "" && len(m.setup) != 3 {
+			if value == "" && len(m.setup) != 2 { // the API key is optional
 				return m, nil, true
 			}
 			m.setup = append(m.setup, value)
 			m.input.Reset()
 			m.selected = 0
 			m.menu = nil
-			prompts := []string{"Provider name", "HTTP(S) base URL", "API type: choose one (Up/Down, Enter)", "API key (optional)"}
-			if len(m.setup) < 4 {
+			prompts := []string{"Provider name", "HTTP(S) base URL", "API key (optional)"}
+			if len(m.setup) < 3 {
 				m.input.Placeholder = prompts[len(m.setup)]
-				if len(m.setup) == 2 {
-					m.menu = []command{
-						{name: "responses", description: "OpenAI Responses API"},
-						{name: "chat_completions", description: "OpenAI-compatible Chat Completions API"},
-					}
-				}
 				break
 			}
-			err := m.a.AddProvider(m.setup[0], agent.Provider{BaseURL: m.setup[1], APIType: m.setup[2], APIKey: m.setup[3]})
+			err := m.a.AddProvider(m.setup[0], agent.Provider{BaseURL: m.setup[1], APIKey: m.setup[2]})
 			m.closePicker()
 			if err != nil {
-				m.add("error", err.Error())
-			} else {
-				m.add("notice", "Provider created. Choose a model with /model.")
+				return m.fail(err)
 			}
+			m.add("notice", "Provider created. Choose a model with /model.")
 			break
 		}
 		matches := m.completions()
@@ -146,10 +139,9 @@ func (m model) pickerKey(key tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		err := m.a.Select(settings.Provider, settings.Model, settings.Effort)
 		m.closePicker()
 		if err != nil {
-			m.add("error", err.Error())
-		} else {
-			m.add("notice", fmt.Sprintf("Selected %s · %s/%s", settings.Provider, settings.Model, settings.Effort))
+			return m.fail(err)
 		}
+		m.add("notice", fmt.Sprintf("Selected %s · %s/%s", settings.Provider, settings.Model, settings.Effort))
 	default:
 		return m, nil, false
 	}

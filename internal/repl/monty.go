@@ -12,12 +12,7 @@ import (
 	"unicode"
 
 	monty "github.com/ewhauser/gomonty"
-	"lopy/internal/limitbuf"
 )
-
-const outputLimit = limitbuf.Limit
-
-type cappedBuffer = limitbuf.Buffer
 
 // Monty runs in a child copy of lopy, without CPython.
 // Keeping the VM in a process allows hard cancellation of infinite Python loops.
@@ -59,7 +54,6 @@ func runMontyWorker(input io.Reader, output io.Writer) error {
 		"read":  fileFunction([]string{"path", "offset", "limit"}, []any{int64(1), int64(200)}, readText),
 		"write": fileFunction([]string{"path", "content"}, nil, writeText),
 		"patch": fileFunction([]string{"edits"}, nil, patchText),
-		"grep":  fileFunction([]string{"pattern", "path", "limit", "glob"}, []any{".", int64(200), ""}, grepText),
 		"sh": func(_ context.Context, call monty.Call) (monty.Result, error) {
 			if len(call.Args) != 1 || len(call.Kwargs) != 0 {
 				return pythonError("TypeError", "sh() expects one command string"), nil

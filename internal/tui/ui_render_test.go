@@ -317,7 +317,11 @@ func TestMinimalCommandCompletions(t *testing.T) {
 		if strings.Contains(plain, "Tab to complete") || strings.Contains(plain, "Enter to run") || strings.Contains(plain, "↑/↓ to select") {
 			t.Fatal("completion hints still shown")
 		}
+		start := max(0, m.selected-8+1) // mirrors the eight-row completion window
 		for i, cmd := range commands {
+			if i < start || i >= start+8 {
+				continue // outside the visible completion window
+			}
 			found := false
 			for _, row := range strings.Split(view, "\n") {
 				if !strings.Contains(ansi.Strip(row), cmd.name) || strings.Contains(ansi.Strip(row), "No provider configured") {

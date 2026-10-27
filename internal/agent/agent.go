@@ -8,8 +8,10 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/param"
@@ -17,8 +19,45 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 
 	"lopy/internal/repl"
-	"lopy/prompts"
 )
+
+var codeField = regexp.MustCompile(`"code"\s*:\s*"`)
+
+// Decode only the complete prefix of a JSON string, withholding split escapes,
+// UTF-8 characters and surrogate pairs until the next delta completes them.
+func partialCode(arguments string) string {
+	loc := codeField.FindStringIndex(arguments)
+	if loc == nil {
+		return ""
+	}
+	quoted := arguments[loc[1]-1:]
+	var text string
+	if json.NewDecoder(strings.NewReader(quoted)).Decode(&text) == nil {
+		return text
+	}
+	for end := len(quoted); end > 0 && end >= len(quoted)-12; end-- {
+		candidate := quoted[:end]
+		if !utf8.ValidString(candidate) {
+			continue
+		}
+		if json.Unmarshal([]byte(candidate+`"`), &text) == nil {
+			if len(candidate) >= 6 {
+				tail := strings.ToLower(candidate[len(candidate)-6:])
+				if strings.HasPrefix(tail, `\ud`) && strings.ContainsAny(tail[3:4], "89ab") {
+					slashes := 0
+					for i := len(candidate) - 6; i >= 0 && candidate[i] == '\\'; i-- {
+						slashes++
+					}
+					if slashes%2 == 1 {
+						continue
+					}
+				}
+			}
+			return text
+		}
+	}
+	return ""
+}
 
 type InitializationError struct{ Err error }
 
@@ -130,7 +169,7 @@ func (a *Agent) RunInput(ctx context.Context, input Input, emit func(Event), ste
 
 	var total Usage
 	usageKnown := true
-	for step := 0; step < 100; step++ {
+	for step := 0; a.settings.MaxAgentSteps <= 0 || step < a.settings.MaxAgentSteps; step++ {
 		if ctx.Err() != nil {
 			if !userAdded {
 				return &InitializationError{ctx.Err()}
@@ -163,7 +202,8 @@ func (a *Agent) RunInput(ctx context.Context, input Input, emit func(Event), ste
 		}
 
 		acceptSteering()
-		items, e := a.request(ctx, emit)
+		a.compactIfNeeded(ctx, emit)
+		items, e := a.requestWithRetries(ctx, emit)
 		if e != nil {
 			return e
 		}
@@ -260,20 +300,13 @@ func (a *Agent) RunInput(ctx context.Context, input Input, emit func(Event), ste
 			return nil
 		}
 	}
-	return fmt.Errorf("stopped after 100 agent steps")
+	return fmt.Errorf("stopped after %d agent steps; raise max_agent_steps in settings.toml", a.settings.MaxAgentSteps)
 }
 func (a *Agent) request(ctx context.Context, emit func(Event)) ([]json.RawMessage, error) {
 	if strings.TrimSpace(a.settings.Model) == "" || strings.TrimSpace(a.settings.Provider) == "" {
 		return nil, fmt.Errorf("no provider or model selected: use /login to add a provider, then choose a model with /model")
 	}
-	system := a.System
-	if system == "" {
-		system = prompts.System
-	}
-	prompt := system + "\n\n<prefix>\n" + a.REPL.Prefix + "\n</prefix>"
-	if a.settings.Providers[a.settings.Provider].APIType == "chat_completions" {
-		return a.requestChat(ctx, prompt, emit)
-	}
+	prompt := a.instructions()
 	// Keep the on-disk protocol items verbatim while using SDK request types.
 	input := make(responses.ResponseInputParam, len(a.History))
 	for i, item := range a.History {

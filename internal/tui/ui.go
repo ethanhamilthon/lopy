@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"sort"
 	"strings"
@@ -49,6 +50,7 @@ type model struct {
 	inputValue              string
 	inputWidth, inputHeight int
 	contextInput            *int64
+	sel                     *selection
 	latest                  string
 	menuKind                string
 	menu                    []command
@@ -72,6 +74,7 @@ func newModel(a *agent.Agent, cwd string) model {
 	style := textarea.Style{Base: base, CursorLine: base, Text: base, Placeholder: base.Foreground(muted), EndOfBuffer: base}
 	input.FocusedStyle = style
 	input.BlurredStyle = style
+	applyColors(a.Settings())
 	m := model{a: a, input: input, viewport: viewport.New(80, 24), width: 80, height: 24, cwd: cwd}
 	m.restoreHistory()
 	m.refresh(true)
@@ -138,7 +141,33 @@ func (m *model) refresh(follow bool) {
 		m.viewport.GotoBottom()
 	}
 }
+
+// draft is the composer state that must survive a background turn start.
+type draft struct {
+	text   string
+	images []repl.Image
+	offset int
+}
+
+func (m *model) keepDraft() draft {
+	return draft{m.input.Value(), m.images, m.viewport.YOffset}
+}
+func (m *model) restoreDraft(d draft, follow bool) {
+	m.input.SetValue(d.text)
+	m.images = d.images
+	m.refresh(follow)
+	if !follow {
+		m.viewport.SetYOffset(d.offset)
+	}
+}
 func (m *model) add(kind, text string) { m.entries = append(m.entries, entry{Kind: kind, Text: text}) }
+
+// stop adds a diagnostic, refreshes the view and ends the update cycle.
+func (m *model) stop(kind, text string) (tea.Model, tea.Cmd) {
+	m.add(kind, text)
+	m.refresh(true)
+	return *m, nil
+}
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	msg = normalizeTerminalKey(msg)
@@ -151,19 +180,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case followerTick:
 		if !m.busy && !m.a.ReadOnly {
 			if messages := m.a.Notifications(); len(messages) > 0 {
-				draft, draftImages, offset := m.input.Value(), m.images, m.viewport.YOffset
-				m.images = nil
+				draft := m.keepDraft()
 				next, cmd := m.startTurn(messages[0])
 				m = next.(model)
 				for _, text := range messages[1:] {
 					m.steering.Push(text)
 				}
-				m.input.SetValue(draft)
-				m.images = draftImages
-				m.refresh(follow)
-				if !follow {
-					m.viewport.SetYOffset(offset)
-				}
+				m.restoreDraft(draft, follow)
 				return m, tea.Batch(cmd, followerPulse())
 			}
 		}
@@ -227,16 +250,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refresh(follow)
 		return m, nil
 	case tea.MouseMsg:
+		if cmd := m.mouseSelection(v); cmd != nil || m.sel != nil {
+			m.refresh(false)
+			return m, cmd
+		}
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
 		return m, cmd
+	case clipboardCopied:
+		return m.stop("info", fmt.Sprintf("Copied %d lines to the clipboard.", v.lines))
 	case agent.Event:
 		if v.Kind == "done" {
 			m.busy = false
 			m.cancel = nil
 			if len(m.queued) > 0 && v.Text == "" && !m.cancelling && m.pending == "" {
-				offset := m.viewport.YOffset
-				draft, draftImages := m.input.Value(), m.images
+				draft := m.keepDraft()
 				queued := append([]agent.Input(nil), m.queued...)
 				m.images = queued[0].Images
 				next, cmd := m.startTurn(queued[0].Text)
@@ -245,12 +273,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.images = text.Images
 					m.queueSteering(text.Text)
 				}
-				m.input.SetValue(draft)
-				m.images = draftImages
-				m.refresh(follow)
-				if !follow {
-					m.viewport.SetYOffset(offset)
-				}
+				m.restoreDraft(draft, follow)
 				return m, cmd
 			}
 			if len(m.queued) > 0 || m.retry {
@@ -375,16 +398,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.images = input.Images
 					m.input.CursorEnd()
 				} else {
-					m.add("notice", "That instruction was already accepted and cannot be recalled.")
+					return m.stop("notice", "That instruction was already accepted and cannot be recalled.")
 				}
 				m.refresh(true)
 				return m, nil
 			}
 		case "enter":
 			if m.pasting {
-				m.add("notice", "Clipboard read in progress; wait before submitting.")
-				m.refresh(true)
-				return m, nil
+				return m.stop("notice", "Clipboard read in progress; wait before submitting.")
 			}
 
 			text := strings.TrimSpace(m.input.Value())
@@ -395,9 +416,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.runCommand(matches[m.selected%len(matches)].name)
 			}
 			if m.a.ReadOnly {
-				m.add("notice", "Session is read-only; use /new or /resume.")
-				m.refresh(true)
-				return m, nil
+				return m.stop("notice", "Session is read-only; use /new or /resume.")
 			}
 			if m.busy {
 				m.queueSteering(text)
@@ -405,9 +424,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if s := m.a.Settings(); s.Provider == "" || s.Model == "" {
-				m.add("notice", m.setupHint())
-				m.refresh(true)
-				return m, nil
+				return m.stop("notice", m.setupHint())
 			}
 			return m.startTurn(text)
 
@@ -426,4 +443,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.refresh(follow)
 	return m, cmd
 }
-func (m model) View() string { return m.viewport.View() }
+func (m model) View() string {
+	view := m.viewport.View()
+	if m.sel == nil {
+		return view
+	}
+	return strings.Join(m.sel.highlight(strings.Split(view, "\n"), m.viewport.Width), "\n")
+}

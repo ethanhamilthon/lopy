@@ -14,13 +14,30 @@ import (
 )
 
 type Provider struct {
-	APIType string `toml:"api_type"`
 	BaseURL string `toml:"base_url"`
 	APIKey  string `toml:"api_key"`
 }
 
+// removedProvider carries the retired api_type key so old files get a clear error.
+type removedProvider struct {
+	APIType string `toml:"api_type"`
+}
+
+type removedSettings struct {
+	Providers map[string]removedProvider `toml:"providers"`
+}
+
+// colorNames lists the palette entries accepted from settings.
+var colorNames = map[string]struct{}{
+	"accent": {}, "foreground": {}, "muted": {}, "code": {}, "dim": {},
+	"input": {}, "assistant": {}, "error": {}, "warn": {}, "info": {},
+}
+
 type Settings struct {
 	AttachmentDir    string              `toml:"attachment_dir"`
+	MaxContextTokens int64               `toml:"max_context_tokens"`
+	CompactKeepTurns int                 `toml:"compact_keep_turns"`
+	MaxAgentSteps    int                 `toml:"max_agent_steps"`
 	MaxCodeLines     int                 `toml:"max_code_lines"`
 	MaxResultLines   int                 `toml:"max_result_lines"`
 	MaxThinkingLines int                 `toml:"max_thinking_lines"`
@@ -28,6 +45,7 @@ type Settings struct {
 	Model            string              `toml:"model"`
 	ReasoningSummary string              `toml:"reasoning_summary"`
 	Effort           string              `toml:"effort"`
+	Colors           map[string]string   `toml:"colors"`
 	Providers        map[string]Provider `toml:"providers"`
 }
 
@@ -41,14 +59,35 @@ model = ""
 effort = ""
 # Set to off for providers/models that do not support reasoning summaries.
 reasoning_summary = "auto"
+# Compact older turns into a summary when the history exceeds this estimated size.
+# The estimate is 4 bytes per token plus 1200 per image; 0 disables compaction.
+max_context_tokens = 400000
+# Turns kept verbatim when compacting.
+compact_keep_turns = 4
+# Model/tool round trips allowed in one turn; 0 means no limit.
+max_agent_steps = 0
 # Visible body rows per timeline block; 0 hides the whole block.
 max_code_lines = 999
 max_result_lines = 4
 max_thinking_lines = 4
+
+# Colors are #rrggbb values; delete an entry to use the built-in default.
+# This table must stay after every top-level key.
+[colors]
+accent = "#79d9ff"
+foreground = "#d5ddeb"
+muted = "#8794a8"
+code = "#a0a0a0"
+dim = "#606060"
+input = "#8aadff"
+assistant = "#9bdef5"
+error = "#f09eac"
+warn = "#e5c07b"
+info = "#d7c38b"
 `
 
 func loadSettings(dir string) (Settings, error) {
-	s := Settings{MaxCodeLines: 999, MaxResultLines: 4, MaxThinkingLines: 4}
+	s := Settings{MaxCodeLines: 999, MaxResultLines: 4, MaxThinkingLines: 4, MaxContextTokens: 400000, CompactKeepTurns: 4}
 	path := filepath.Join(dir, "settings.toml")
 	text, err := loadOrCreateFile(path, defaultSettings)
 	if err != nil {
@@ -56,6 +95,13 @@ func loadSettings(dir string) (Settings, error) {
 	}
 	if err = toml.Unmarshal([]byte(text), &s); err != nil {
 		return s, fmt.Errorf("%s: %w", path, err)
+	}
+	var removed removedSettings
+	_ = toml.Unmarshal([]byte(text), &removed)
+	for name, p := range removed.Providers {
+		if p.APIType == "chat_completions" {
+			return s, fmt.Errorf("%s: provider %q uses the removed chat_completions API; remove api_type or set it to \"responses\"", path, name)
+		}
 	}
 	if err := validateSettings(s); err != nil {
 		return s, fmt.Errorf("%s: %w", path, err)
@@ -67,6 +113,9 @@ func validateSettings(s Settings) error {
 	if s.MaxCodeLines < 0 || s.MaxResultLines < 0 || s.MaxThinkingLines < 0 {
 		return fmt.Errorf("max_*_lines must be non-negative")
 	}
+	if s.MaxContextTokens < 0 || s.CompactKeepTurns < 0 || s.MaxAgentSteps < 0 {
+		return fmt.Errorf("max_context_tokens, compact_keep_turns and max_agent_steps must be non-negative")
+	}
 	// An empty provider and model mean nothing has been selected yet; that is
 	// valid and lopy asks the user to /login and choose a /model.
 	if s.Provider != "" {
@@ -75,12 +124,22 @@ func validateSettings(s Settings) error {
 		}
 	}
 	for name, p := range s.Providers {
-		if p.APIType != "" && p.APIType != "responses" && p.APIType != "chat_completions" {
-			return fmt.Errorf("provider %q: unsupported API type %q", name, p.APIType)
-		}
 		u, err := url.Parse(p.BaseURL)
 		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 			return fmt.Errorf("provider %q needs an HTTP(S) base_url", name)
+		}
+	}
+	for name, value := range s.Colors {
+		if _, ok := colorNames[name]; !ok {
+			return fmt.Errorf("unknown color %q; allowed: accent, foreground, muted, code, dim, input, assistant, error, warn, info", name)
+		}
+		if len(value) != 7 || value[0] != '#' {
+			return fmt.Errorf("color %q must be #rrggbb, got %q", name, value)
+		}
+		for _, digit := range value[1:] {
+			if !strings.ContainsRune("0123456789abcdefABCDEF", digit) {
+				return fmt.Errorf("color %q must be #rrggbb, got %q", name, value)
+			}
 		}
 	}
 	if s.ReasoningSummary != "" && s.ReasoningSummary != "auto" && s.ReasoningSummary != "off" {

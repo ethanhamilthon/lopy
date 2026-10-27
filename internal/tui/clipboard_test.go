@@ -202,7 +202,7 @@ func TestClipboardTextPasteAndProviderKeyMasking(t *testing.T) {
 		t.Fatal(m.input.Value())
 	}
 	m.menuKind = "setup"
-	m.setup = []string{"name", "https://example.com", "responses"}
+	m.setup = []string{"name", "https://example.com"}
 	m.input.Reset()
 	m.acceptClipboard(clipboardResult{text: "secret-key"})
 	m.refresh(true)

@@ -64,10 +64,12 @@ Type `/` to open command completion. Use **Up/Down** to choose, **Tab** to compl
 | `/quit` | Save the chat and exit |
 | `/cancel` | Cancel the current turn |
 | `/resume` | Complete/select a saved session in the current project |
+| `/compact [prompt]` | Summarize everything but the last `compact_keep_turns` turns; an optional prompt guides the summary |
+| `/reload` | Re-read settings, prompt files and the palette, then restart the interpreter |
 
 `/new`, `/resume <id>`, and `/quit` also work during a turn: they cancel it first and wait for history to be saved before continuing.
 
-**Enter** sends a message; **Shift+Enter** inserts a newline in terminals supporting the Kitty keyboard protocol, CSI-u, or xterm modified-key sequences. **Alt+Enter / Ctrl+J** also inserts a newline and works as a fallback when the terminal cannot distinguish Shift+Enter from Enter. **Esc / Ctrl+C** cancels a running turn. **Ctrl+C**, or **Ctrl+D** on empty input, exits when idle.
+**Enter** sends a message; **Shift+Enter** inserts a newline in terminals supporting the Kitty keyboard protocol, CSI-u, or xterm modified-key sequences. **Alt+Enter / Ctrl+J** also inserts a newline and works as a fallback when the terminal cannot distinguish Shift+Enter from Enter. **Esc / Ctrl+C** cancels a running turn. **Ctrl+C**, or **Ctrl+D** on empty input, exits when idle. **Dragging with the left mouse button** over the timeline highlights text and copies it to the system clipboard on release; the wheel still scrolls.
 
 The input lives at the end of the timeline, not in a fixed bottom panel. **PgUp/PgDn**, **Ctrl+Up/Down**, and the **mouse wheel** scroll the timeline, including the input. **Ctrl+Home/End** jumps to the beginning/end. Streaming follows the end only when you have not scrolled away. Typing brings the input back into view. Sent user messages use a left rail without a background. The input, agent messages, tool calls, and tool results use the terminal background.
 
@@ -95,7 +97,7 @@ User messages have the same left rail as the composer, without a role heading or
 
 Assistant metadata summarizes requests up to that message **within the current turn**. The final reply includes the entire turn, counting each request once even if it emitted several tool calls. REPL calls show their originating request's duration and usage; results show execution duration. Cache is cached input tokens divided by input tokens, rounded to a whole percent. Unavailable or undefined cache shows `cache —`; other missing values show `?`, not an invented zero.
 
-Reasoning summaries are explicitly requested by default (`reasoning_summary = "auto"` in settings). Set `reasoning_summary = "off"` for providers/models that reject this option, or models without reasoning support. There is no automatic retry of rejected requests. No summary block is invented when the provider supplies no text, and encrypted reasoning is never rendered.
+Reasoning summaries are explicitly requested by default (`reasoning_summary = "auto"` in settings). Set `reasoning_summary = "off"` for providers/models that reject this option, or models without reasoning support. Transient transport failures (`408`, `409`, `429`, `5xx`, timeouts, dropped connections) are retried up to three attempts with a visible `Retrying in Ns` notice, honoring `Retry-After`. Retries happen only before any output reaches the screen, so partial text is never duplicated; other errors are reported without an automatic retry. No summary block is invented when the provider supplies no text, and encrypted reasoning is never rendered.
 
 The single-line bar, separated from the composer by one empty row, shows `provider · model/effort · ctx ~N` on the left and the project path on the right. **`ctx ~N` is the latest request's reported input-token count**, including cached input, used as an approximation of the current context footprint. It is not session token spend, a context-window percentage, or a known remaining capacity. It becomes stale as results/new text are added and updates on the next reported request. Context counts use compact uppercase units, for example `ctx ~37K` for 36,679 tokens and `ctx ~1.2M` for 1,200,000. Missing usage shows `ctx ?`. Narrow terminals truncate the bar without wrapping.
 
@@ -105,7 +107,7 @@ Completed entries are cached; streaming updates only reformat the changing entry
 
 Variables and functions persist across tool calls **and user turns**. Restarting the app, `/new`, `/resume`, a worker crash, or cancelling active Python execution loses interpreter state. A separate user message in `<notify>` tells the model when previous variables are unavailable.
 
-Monty supports a restricted Python subset, not all of CPython. Functions, lists, dicts, sets, tuples, ordinary builtins, `print()` and f-strings are supported. The only importable modules are `json`, `math`, `re`, `os`, `sys`, `pathlib`, `datetime`, `typing` and `asyncio`; everything else (for example `collections`, `dataclasses`, `enum`, `itertools`, `random`, `time`, `io`) raises `ModuleNotFoundError`, and there are no third-party packages. Those modules are partial: OS-backed calls such as `Path.exists()`, `os.environ` and `datetime.now()` raise `NotImplementedError` because Lopy provides no OS handler, so use `sh`, `read`, `write` and `grep` instead. `class` definitions, `del`, `@`, `input()`, `open()` and `print(..., file=)` are unsupported; importing a module never grants host access. Unsupported syntax and operations return errors. Monty's `repr` is not always CPython-identical (a one-element tuple can display as `(1)` instead of `(1,)`).
+Monty supports a restricted Python subset, not all of CPython. Functions, lists, dicts, sets, tuples, ordinary builtins, `print()` and f-strings are supported. The only importable modules are `json`, `math`, `re`, `os`, `sys`, `pathlib`, `datetime`, `typing` and `asyncio`; everything else (for example `collections`, `dataclasses`, `enum`, `itertools`, `random`, `time`, `io`) raises `ModuleNotFoundError`, and there are no third-party packages. Those modules are partial: OS-backed calls such as `Path.exists()`, `os.environ` and `datetime.now()` raise `NotImplementedError` because Lopy provides no OS handler, so use `sh`, `read` and `write` instead. `class` definitions, `del`, `@`, `input()`, `open()` and `print(..., file=)` are unsupported; importing a module never grants host access. Unsupported syntax and operations return errors. Monty's `repr` is not always CPython-identical (a one-element tuple can display as `(1)` instead of `(1,)`).
 
 Tool results include captured print output and Monty's `repr` of the final top-level expression unless it is `None`; `_` retains the last non-None value. Ordinary runtime exceptions preserve state, including earlier assignments. Syntax errors execute nothing. The prefix executes once per new interpreter, with print output but without implicit expression display.
 
@@ -127,8 +129,7 @@ result["returncode"]
 ### File helpers, images, and built-in documentation
 
 The Python environment exposes `read(path, offset=1, limit=200)`,
-`write(path, content)`, `patch(edits)`,
-`grep(pattern, path=".", limit=200, glob="")`, and `view(path)` alongside `sh`.
+`write(path, content)`, `patch(edits)`, and `view(path)` alongside `sh`.
 `read` supports positive 1-based offsets or negative offsets from EOF, clips
 overly long lines, and appends range/truncation footers on partial reads.
 `write` creates missing parent directories automatically before atomic rename.
@@ -136,9 +137,9 @@ overly long lines, and appends range/truncation footers on partial reads.
 and locations; each old string must match exactly once (mismatch errors report
 the match count). It validates all edits first and rolls back earlier
 replacements on a write failure. Individual file writes are atomic; a multi-file
-patch is not crash-atomic. `grep` accepts an optional filename `glob`, clips
-long matched lines, and skips `.git`, `.lopy`, and common dependency/build
-directories. File helpers support UTF-8 files up to 4 MiB; paths resolve
+patch is not crash-atomic. Searching is done through `sh` with the system `grep`
+or `rg`, narrowed by `-n`, a path and a match limit; lopy does not provide its
+own search helper. File helpers support UTF-8 files up to 4 MiB; paths resolve
 relative to the project directory.
 
 `view(path)` captures a PNG/JPEG image (up to 2 MiB and 20 megapixels; four per
@@ -201,8 +202,51 @@ a darker gray; errors retain their distinctive error styling.
 
 Limits apply only to the TUI. Complete content remains in the saved history and
 in the agent's context, and headless output is not truncated. Reload settings
-with `/new` (which starts a new session without deleting the old chat), or restart to keep the saved chat.
-Existing configuration files are never overwritten automatically.
+with `/reload` (keeps the chat, restarts the interpreter) or `/new` (starts a new
+session without deleting the old chat). Existing configuration files are never
+overwritten automatically.
+
+### Context compaction
+
+`settings.toml` controls when older turns are replaced by a model-written summary:
+
+```toml
+max_context_tokens = 400000   # estimated size; 0 disables compaction
+compact_keep_turns = 4        # turns kept verbatim
+max_agent_steps = 0           # model/tool round trips per turn; 0 means no limit
+```
+
+The estimate charges 4 bytes per token and 1,200 tokens per image; the status bar keeps
+showing the provider's real input-token count. Before a request that would exceed the
+budget, everything older than the last `compact_keep_turns` turns is summarized into one
+`<compact_summary>` item, using the same system prompt and prefix as normal turns. Cuts
+happen only at user-message boundaries, so a tool call never loses its output. If the
+summary request fails during automatic compaction, the old part is dropped without a
+summary and the turn continues. `/compact` does the same on demand, `/compact <prompt>`
+adds an instruction to the summary request, and a failed explicit compaction leaves
+history untouched. The trimmed history is saved immediately.
+
+### Colors
+
+Every color comes from `settings.toml`; the defaults are the built-in palette:
+
+```toml
+[colors]
+accent = "#79d9ff"
+foreground = "#d5ddeb"
+muted = "#8794a8"
+code = "#a0a0a0"
+dim = "#606060"
+input = "#8aadff"
+assistant = "#9bdef5"
+error = "#f09eac"
+warn = "#e5c07b"
+info = "#d7c38b"
+```
+
+Values must be `#rrggbb`; unknown names are rejected with the allowed list. Delete an entry
+to fall back to its default. Markdown headings, the header, notices and the status bar all
+follow this table. `/reload` applies a changed palette without restarting lopy.
 
 ### Markdown, working status and steering
 
@@ -258,12 +302,13 @@ an active turn. The selected model/effort update the current session and global
 defaults for new sessions, not older sessions.
 
 `/login` lists providers and ends with **+ Add**. The creation wizard asks for a
-unique name, HTTP(S) base URL, API type (`responses` or `chat_completions`), and an
-optional API key. Keys are masked in the composer and stored only in private
-configuration, never in chat history. Older configurations with no `api_type`
-use Responses. After choosing a provider, use `/model` to select a compatible
-model. Both API types support streaming, tool calls, image input, refusals and
-reported usage. Unsupported provider-specific extensions are not inferred.
+unique name, HTTP(S) base URL, and an optional API key. Keys are masked in the
+composer and stored only in private configuration, never in chat history. Only the
+Responses API is supported; a provider configured with the removed
+`chat_completions` `api_type` fails to load with an explicit error. After choosing a
+provider, use `/model` to select a compatible model. Responses supports streaming,
+tool calls, image input, refusals and reported usage. Unsupported provider-specific
+extensions are not inferred.
 
 JSONL session headers pin `provider`, `model`, and `effort` in a selection object;
 credentials remain in settings.toml. Missing providers produce an explicit error.

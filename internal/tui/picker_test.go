@@ -65,16 +65,16 @@ func TestProviderWizardMasksKeyAndDoesNotSaveDraftToHistory(t *testing.T) {
 	}
 	m.selected = len(m.menu) - 1
 	m = enterPicker(m)
-	for _, value := range []string{"custom", "https://example.com/v1", "chat_completions", "secret-key"} {
+	for _, value := range []string{"custom", "https://example.com/v1", "secret-key"} {
 		m.input.SetValue(value)
 		m.refresh(true)
-		if len(m.setup) == 3 && strings.Contains(m.View(), "secret-key") {
+		if len(m.setup) == 2 && strings.Contains(m.View(), "secret-key") {
 			t.Fatal("credential visible")
 		}
 		m = enterPicker(m)
 	}
 	p, ok := m.a.Settings().Providers["custom"]
-	if !ok || p.APIKey != "secret-key" || p.APIType != "chat_completions" {
+	if !ok || p.APIKey != "secret-key" {
 		t.Fatalf("provider not saved: %+v", p)
 	}
 	if len(m.a.History) != 0 || strings.Contains(fmt.Sprint(m.entries), "secret-key") {

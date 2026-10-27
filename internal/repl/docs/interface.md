@@ -1,7 +1,9 @@
 # Interface
 
 Commands: /new starts a new chat; /resume selects a project session; /cancel
-cancels work; /quit saves/exits; /help shows commands and shortcuts.
+cancels work; /quit saves/exits; /help shows commands and shortcuts; /compact
+[prompt] summarizes older turns; /reload re-reads settings and prompts and
+restarts the interpreter without changing the session.
 Up/Down navigates completions, Tab completes, and Enter immediately executes
 the selected visible completion. Without a matching visible completion,
 slash-prefixed text is an ordinary message. Esc dismisses completions.
@@ -9,7 +11,9 @@ Otherwise Enter submits. Alt+Enter or Ctrl+J
 inserts a newline; Shift+Enter is supported through compatible terminal
 sequences. PgUp/PgDn scroll the timeline; Ctrl+Home/End jumps to its ends.
 Ctrl+C cancels active work or exits when idle. Up with an empty composer can
-recall pending steering. The composer scrolls with the timeline.
+recall pending steering. The composer scrolls with the timeline. Dragging the
+left mouse button over the timeline selects text and copies it to the system
+clipboard on release; the wheel still scrolls.
 
 settings.toml controls visible body rows through max_code_lines,
 max_result_lines, and max_thinking_lines; zero hides that block. Complete data

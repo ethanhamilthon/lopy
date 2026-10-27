@@ -15,68 +15,58 @@ import (
 	"lopy/internal/repl"
 )
 
-func TestImageInputAndSteeringPersistAcrossBothAPIs(t *testing.T) {
-	for _, api := range []string{"responses", "chat_completions"} {
-		t.Run(api, func(t *testing.T) {
-			t.Setenv("LOPY_HOME", t.TempDir())
-			calls := 0
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				calls++
-				var request map[string]any
-				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-					t.Error(err)
-				}
-				body := string(raw(request))
-				if !strings.Contains(body, "data:image/png;base64,first") || !strings.Contains(body, "data:image/png;base64,second") {
-					t.Error("image bytes missing")
-				}
-				if strings.Contains(body, "/private/original") {
-					t.Error("full attachment path leaked")
-				}
-				if api == "chat_completions" && !strings.Contains(body, `"image_url":{"url"`) {
-					t.Error("chat image format missing")
-				}
-				w.Header().Set("Content-Type", "text/event-stream")
-				if api == "responses" {
-					fmt.Fprint(w, "data: {\"type\":\"response.completed\",\"response\":{\"output\":[]}}\n\n")
-				} else {
-					fmt.Fprint(w, "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
-				}
-			}))
-			defer server.Close()
-			cwd := t.TempDir()
-			a, err := New(cwd)
-			if err != nil {
-				t.Fatal(err)
-			}
-			configureTestAgent(t, a, Settings{Provider: "p", Model: "m", Providers: map[string]Provider{"p": {BaseURL: server.URL, APIType: api}}})
-			queue := &Steering{}
-			queue.PushInput(Input{Text: "second image", Images: []repl.Image{{URL: "data:image/png;base64,second", Path: "/private/original/second.png"}}})
-			input := Input{Images: []repl.Image{{URL: "data:image/png;base64,first", Path: "/private/original/first.png"}}}
-			if err = a.RunInput(context.Background(), input, func(Event) {}, queue); err != nil {
-				t.Fatal(err)
-			}
-			if calls != 1 {
-				t.Fatal("image-only input failed to complete")
-			}
-			path := a.HistoryPath
-			id := a.SessionInfo()["id"].(string)
-			a.Close()
-			restored, err := New(cwd, id)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer restored.Close()
-			data, err := os.ReadFile(path)
-			if err != nil || !strings.Contains(string(data), "base64,first") || !strings.Contains(string(data), "base64,second") {
-				t.Fatal("image history not durable")
-			}
-			if !strings.Contains(fmt.Sprint(restored.Records()), "first.png") {
-				t.Fatal("image-only history missing textual label")
-			}
-		})
+func TestImageInputAndSteeringPersist(t *testing.T) {
+	t.Setenv("LOPY_HOME", t.TempDir())
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var request map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+		}
+		body := string(raw(request))
+		if !strings.Contains(body, "data:image/png;base64,first") || !strings.Contains(body, "data:image/png;base64,second") {
+			t.Error("image bytes missing")
+		}
+		if strings.Contains(body, "/private/original") {
+			t.Error("full attachment path leaked")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"type\":\"response.completed\",\"response\":{\"output\":[]}}\n\n")
+	}))
+	defer server.Close()
+	cwd := t.TempDir()
+	a, err := New(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configureTestAgent(t, a, Settings{Provider: "p", Model: "m", Providers: map[string]Provider{"p": {BaseURL: server.URL}}})
+	queue := &Steering{}
+	queue.PushInput(Input{Text: "second image", Images: []repl.Image{{URL: "data:image/png;base64,second", Path: "/private/original/second.png"}}})
+	input := Input{Images: []repl.Image{{URL: "data:image/png;base64,first", Path: "/private/original/first.png"}}}
+	if err = a.RunInput(context.Background(), input, func(Event) {}, queue); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatal("image-only input failed to complete")
+	}
+	path := a.HistoryPath
+	id := a.SessionInfo()["id"].(string)
+	a.Close()
+	restored, err := New(cwd, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	data, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(data), "base64,first") || !strings.Contains(string(data), "base64,second") {
+		t.Fatal("image history not durable")
+	}
+	if !strings.Contains(fmt.Sprint(restored.Records()), "first.png") {
+		t.Fatal("image-only history missing textual label")
 	}
 }
+
 func TestImageSteeringRecallVersusAcceptance(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		queue := &Steering{}

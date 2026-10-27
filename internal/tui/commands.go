@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -17,6 +18,8 @@ var commands = []command{
 	{name: "/quit", icon: "->", description: "Save the chat and exit"},
 	{name: "/cancel", icon: "!", description: "Cancel the current turn"},
 	{name: "/resume", icon: "<", description: "Resume a saved session in this project"},
+	{name: "/compact", icon: "=", description: "Summarize older turns; add a prompt to guide it"},
+	{name: "/reload", icon: "*", description: "Reload settings and prompts; restart the REPL"},
 	{name: "/model", icon: "~", description: "Choose model; Left/Right changes effort"},
 	{name: "/login", icon: "+", description: "Select or create a provider"},
 }
@@ -115,9 +118,7 @@ func (m model) runCommand(name string) (tea.Model, tea.Cmd) {
 			count += len(input.Images)
 		}
 		if count > 0 {
-			m.add("notice", "Submit or remove pending images before switching sessions.")
-			m.refresh(true)
-			return m, nil
+			return m.stop("notice", "Submit or remove pending images before switching sessions.")
 		}
 	}
 	m.input.Reset()
@@ -127,10 +128,8 @@ func (m model) runCommand(name string) (tea.Model, tea.Cmd) {
 	if len(verb) == 0 {
 		return m, nil
 	}
-	if verb[0] != "/resume" && len(verb) != 1 {
-		m.add("error", "Unexpected command arguments.")
-		m.refresh(true)
-		return m, nil
+	if verb[0] != "/resume" && verb[0] != "/compact" && len(verb) != 1 {
+		return m.stop("error", "Unexpected command arguments.")
 	}
 	if verb[0] == "/resume" {
 		sessions, err := m.a.Sessions()
@@ -146,26 +145,45 @@ func (m model) runCommand(name string) (tea.Model, tea.Cmd) {
 			err = fmt.Errorf("choose a session from /resume completions")
 		}
 		if err != nil {
-			m.add("error", err.Error())
-			m.refresh(true)
-			return m, nil
+			return m.stop("error", err.Error())
 		}
 	}
 	switch verb[0] {
 	case "/model", "/login":
 		if m.busy || m.a.ReadOnly {
-			m.add("notice", "Wait for the active turn before changing settings.")
-			break
+			return m.stop("notice", "Wait for the active turn before changing settings.")
 		}
 		cmd := m.openPicker(strings.TrimPrefix(verb[0], "/"))
 		m.refresh(true)
 		return m, cmd
+	case "/reload":
+		if m.busy || m.a.ReadOnly {
+			return m.stop("notice", "Wait for the active turn before reloading settings.")
+		}
+		if err := m.a.Reload(); err != nil {
+			return m.stop("error", err.Error())
+		}
+		applyColors(m.a.Settings())
+		m.cache = nil
+		m.add("notice", "Settings reloaded; Python state was reset.")
+	case "/compact":
+		if m.busy || m.a.ReadOnly {
+			return m.stop("notice", "Wait for the active turn before compacting.")
+		}
+		result, err := m.a.Compact(context.Background(), strings.TrimSpace(strings.TrimPrefix(name, "/compact")))
+		if err != nil {
+			return m.stop("error", err.Error())
+		}
+		m.entries = nil
+		m.contextInput = nil
+		m.restoreHistory()
+		m.add("info", result)
 	case "/help":
 		var help strings.Builder
 		for _, cmd := range commands {
 			fmt.Fprintf(&help, "%-9s %s\n", cmd.name, cmd.description)
 		}
-		help.WriteString("\nEnter: execute selected completion or send / steer while working · Shift+Enter / Alt+Enter / Ctrl+J: newline\nClipboard: Ctrl+V (Cmd+V when forwarded) · Ctrl+X: remove last image\nTab: complete · Up/Down: select completion · unmatched slash text: send normally · Up on empty input: recall queued steering\nPgUp/PgDn or mouse wheel: scroll timeline\nEsc / Ctrl+C: cancel current turn\n\nConfig files: $LOPY_HOME (default: ~/.lopy): settings.toml, prefix.py, system.md\nEdit them, then /new to reload.\nHost access: sh(command) in python_repl; not an OS security sandbox.")
+		help.WriteString("\nEnter: execute selected completion or send / steer while working · Shift+Enter / Alt+Enter / Ctrl+J: newline\nClipboard: Ctrl+V (Cmd+V when forwarded) · Ctrl+X: remove last image\nTab: complete · Up/Down: select completion · unmatched slash text: send normally · Up on empty input: recall queued steering\nPgUp/PgDn or mouse wheel: scroll timeline\nEsc / Ctrl+C: cancel current turn\n\nConfig files: $LOPY_HOME (default: ~/.lopy): settings.toml, prefix.py, system.md\nEdit them, then /reload to apply them to this chat.\nHost access: sh(command) in python_repl; not an OS security sandbox.")
 		m.add("info", help.String())
 	case "/new", "/resume":
 		if m.busy {
@@ -182,6 +200,7 @@ func (m model) runCommand(name string) (tea.Model, tea.Cmd) {
 			if err != nil {
 				m.add("error", err.Error())
 			} else {
+				applyColors(m.a.Settings())
 				m.pasteGeneration++
 				m.pasting = false
 				m.images = nil
@@ -199,8 +218,7 @@ func (m model) runCommand(name string) (tea.Model, tea.Cmd) {
 			m.a.RememberDisplay(m.entries)
 			if !m.a.ReadOnly && m.a.HasSavedSession() {
 				if err := m.a.Save(); err != nil {
-					m.add("error", err.Error())
-					break
+					return m.stop("error", err.Error())
 				}
 			}
 			return m, tea.Quit
@@ -209,10 +227,10 @@ func (m model) runCommand(name string) (tea.Model, tea.Cmd) {
 		if m.busy {
 			m.requestCancel()
 		} else {
-			m.add("info", "No turn is running.")
+			return m.stop("info", "No turn is running.")
 		}
 	default:
-		m.add("error", "Unknown command: "+name+". Type /help.")
+		return m.stop("error", "Unknown command: "+name+". Type /help.")
 	}
 	m.refresh(true)
 	return m, nil

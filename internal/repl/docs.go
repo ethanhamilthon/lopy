@@ -13,37 +13,31 @@ const ToolDescription = `Execute code in a persistent Monty (gomonty v0.0.14) Py
 Variables/functions persist across calls and user turns. Results contain captured print output and
 repr of the last top-level expression unless None; _ stores the last non-None result.
 Ordinary exceptions preserve earlier assignments; syntax errors execute nothing.
-Limits: two minutes per execution, 128 MiB interpreter heap, 10,000,000 allocations,
-recursion depth 1,000, and 16 KiB captured output (keeps first 8 KiB and last 8 KiB, replacing
-the middle with a warning; slice or filter large strings in Python before printing).
-Cancellation/crashes lose state;
-a separate <notify> reports initialization/restarts before work continues.
+Limits: two minutes per execution, 128 MiB heap, 10,000,000 allocations, recursion depth 1,000,
+and 16 KiB captured output (first 8 KiB and last 8 KiB, replaced in the middle by a warning;
+slice or filter large strings before printing). Cancellation/crashes lose state; a separate
+<notify> reports initialization/restarts before work continues.
 Builtins, lists, dicts, sets, tuples, functions and f-strings work.
 Importable modules, and only these: json, math, re, os, sys, pathlib, datetime, typing, asyncio.
-Every other import raises ModuleNotFoundError: collections, collections.abc, dataclasses, enum,
-itertools, functools, random, time, io, string, copy, heapq, textwrap, hashlib, base64, subprocess,
-socket, threading, logging, platform, tempfile, shutil, glob, decimal, fractions, statistics,
-traceback, argparse, unittest, contextlib. Third-party packages do not exist.
-The supported modules are partial: their OS-backed calls (Path.exists, os.environ, datetime.now)
-raise NotImplementedError because no host OS handler is provided — use sh, read, write, grep.
-Unsupported syntax: class definitions, del, @, input(), open(), print(..., file=). Build counters,
-deques and record types from dict, list and functions instead. Repr may differ from CPython.
-docs("runtime") has the full detail.
+Every other import raises ModuleNotFoundError (for example collections, dataclasses, enum,
+itertools, functools, random, time, io, hashlib, subprocess, socket, threading, logging); third-party
+packages do not exist. Supported modules are partial: OS-backed calls such as Path.exists,
+os.environ and datetime.now raise NotImplementedError because no host OS handler exists. Unsupported
+syntax: class definitions, del, @, input(), open(), print(..., file=); build counters and records
+from dict, list and functions. Repr may differ from CPython; docs("runtime") has the full detail.
 Available host functions:
 - sh(command): run /bin/sh -c in the project directory with user filesystem/network/environment
   permissions; returns {stdout, stderr, returncode}. Check returncode and report failures.
-  Use it for builds, tests, git, package managers, network and binary files; external programs
-  must already be installed. For inspecting, searching or editing project sources prefer
-  read, grep, write and patch over shell equivalents (grep, sed, cat, head, find).
+  Use it for builds, tests, git, package managers, network, binary files and searching; external
+  programs must already be installed. Search with grep or rg narrowed by -n, a path and a match
+  limit (for example grep -rn 'pattern' internal | head -20); never dump whole files. For reading
+  and editing project sources prefer read, write and patch over cat, sed, head and find.
 - read(path, offset=1, limit=200): numbered UTF-8 file lines (1-based, or negative offset from EOF;
   limit 1..2000). Long lines and partial reads include truncation/range notes.
 - write(path, content): atomically create/overwrite a UTF-8 file, creating parent directories.
 - patch(edits): list of {path, old, new} exact replacements, in order, across files. Each old must
   match once (errors report match count). Validates all edits before writing; rolls back earlier
   files on a write failure. Returns the number of changed files. No cross-file crash atomicity.
-- grep(pattern, path=".", limit=200, glob=""): recursive Go-regex search returning
-  {matches, truncated}; matches contain path, line, text. Optional glob filters filenames.
-  Skips common build/vendor/.git/.lopy dirs, symlinks, binary, unreadable and oversized files.
 File helpers operate relative to the project cwd; read/write/patch accept files up to 4 MiB.
 - view(path): queue a PNG/JPEG image for the next model request, after all response tool outputs.
   Up to four images per execution, 2 MiB and 20 megapixels each; unavailable in prefix code.

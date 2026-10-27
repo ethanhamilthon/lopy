@@ -6,9 +6,10 @@ max, and Enter saves the selection. Esc cancels; late fetch results do not reope
 a cancelled menu. Settings changes are disabled while a turn is running.
 
 /login lists configured providers and ends with + Add. Add asks for provider
-name, HTTP(S) base URL, API type (responses or chat_completions), and an optional
-API key. The key is masked, kept in private settings.toml, and never appended to
-chat history. An omitted API type in older configuration means Responses.
+name, HTTP(S) base URL, and an optional API key. The key is masked, kept in
+private settings.toml, and never appended to chat history. Only the Responses API
+is supported; a provider configured with the removed chat_completions api_type
+fails to load with an explicit error.
 Provider selection changes the active session's provider and new-session default;
 use /model afterwards to choose a model supported by that provider.
 
@@ -20,10 +21,14 @@ raises an error instead of silently switching providers. Provider credentials an
 endpoints are resolved from current configuration by provider identity. API
 errors for unsupported models/efforts are reported without an automatic fallback.
 
-Responses and Chat Completions both support streaming text, tool argument
-previews, sequential tool execution, image input, refusals, and available usage.
-History uses one canonical representation; the Chat adapter translates it on the
-wire. Unsupported nonstandard provider extensions are not inferred.
+Transient failures (408, 409, 429, 5xx, timeouts, dropped connections) are
+retried up to three attempts, with a visible notice and Retry-After honored.
+Retries stop as soon as any output was shown, so text is never duplicated.
+
+Responses supports streaming text, tool argument previews, sequential tool
+execution, image input, refusals, and available usage. History is stored as
+Responses items verbatim. Unsupported nonstandard provider extensions are not
+inferred.
 
 Python session is an immutable named-tuple snapshot refreshed before every
 execution, including the prefix. Fields: id, model, provider, effort, cwd,

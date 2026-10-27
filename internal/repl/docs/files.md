@@ -26,12 +26,3 @@ write failure, previously written files are rolled back; rollback failures are
 reported too. Each file replacement is atomic, but multiple files are NOT a
 crash-atomic filesystem transaction. Hard cancellation can interrupt the commit.
 Do not use this to coordinate concurrent writers.
-
-grep(pattern, path='.', limit=200, glob='') searches recursively with Go regular
-expressions and returns {'matches': [{'path': ..., 'line': ..., 'text': ...}],
- 'truncated': ...}. Line numbers are 1-based, limit is 1..2000, and optional glob
-filters entry filenames (such as '*.go'). Matched lines over 500 bytes are
-clipped. Searches skip .git, .lopy, node_modules, vendor, .venv, venv,
-__pycache__, dist, build, target, .next, .cache, symlinks, unreadable sub-files,
-binary files and files over 4 MiB. Results stop at the match or output-size limit
-with truncated=True.

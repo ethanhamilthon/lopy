@@ -29,11 +29,7 @@ func TestFileHelpersThroughWorker(t *testing.T) {
 		{`write('nested/dir/two.txt', 'gamma delta')`, "", false},
 		{`patch([{'path':'one.txt','old':'alpha','new':'ALPHA'}, {'path':'one.txt','old':'beta','new':'BETA'}, {'path':'nested/dir/two.txt','old':'gamma','new':'GAMMA'}])`, "2\n", false},
 		{`read('one.txt')`, `1: ALPHA\n2: BETA\n`, false},
-		{`grep('ALPHA|GAMMA')['matches']`, "GAMMA", false},
-		{`len(grep('ALPHA|GAMMA', glob='*.txt')['matches'])`, "2\n", false},
-		{`len(grep('ALPHA|GAMMA', glob='*.go')['matches'])`, "0\n", false},
-		{`len(grep('^$')['matches'])`, "0\n", false},
-		{`grep('A', limit=1)['truncated']`, "True", false},
+		{`read('nested/dir/two.txt')`, `1: GAMMA delta`, false},
 		{`patch([{'path':'one.txt','old':'ALPHA','new':'oops'}, {'path':'nested/dir/two.txt','old':'missing','new':'x'}])`, "matched 0 times", true},
 		{`read('one.txt')`, `1: ALPHA\n2: BETA\n`, false},
 		{`patch([{'path':'one.txt','old':'','new':'x'}])`, "nonempty old", true},
@@ -44,8 +40,7 @@ func TestFileHelpersThroughWorker(t *testing.T) {
 		{`read('one.txt', 1, offset=2)`, "duplicate argument", true},
 		{`read('one.txt', typo=1)`, "unknown argument", true},
 		{`read('one.txt', limit=2001)`, "limit 1..2000", true},
-		{`grep('[')`, "error parsing regexp", true},
-		{`grep('A', glob='[')`, "syntax error in pattern", true},
+		{`grep('A')`, `unable to find "grep"`, true},
 		{`x = 42`, "", false},
 		{`read('missing')`, "no such file", true},
 		{`x`, "42\n", false},
@@ -97,20 +92,9 @@ func TestFileHelpersLimitsAndSymlinks(t *testing.T) {
 			t.Fatal("accepted binary/oversized file")
 		}
 	}
-	ignored := filepath.Join(dir, "node_modules")
-	if err := os.Mkdir(ignored, 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(ignored, "skip.js"), []byte("new"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	result, err := grepText([]any{"new", dir, int64(200), ""})
-	if err != nil {
-		t.Fatal(err)
-	}
-	matches := result.(map[string]any)["matches"].([]any)
-	if len(matches) != 1 {
-		t.Fatalf("unexpected grep results: %v", matches)
+	lines, err := readText([]any{path, int64(1), int64(10)})
+	if err != nil || !strings.Contains(fmt.Sprint(lines), "1: new") {
+		t.Fatalf("read after write: %v %v", lines, err)
 	}
 	if _, err := readText([]any{path, int64(20), int64(1)}); err != nil {
 		t.Fatal(err)

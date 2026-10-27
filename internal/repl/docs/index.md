@@ -2,7 +2,7 @@
 
 Use docs(topic) with one of these topics:
 - runtime: interpreter, limits, state, prefix, and host functions.
-- files: read, write, multi-file patch, and grep.
+- files: read, write and multi-file patch; searching uses sh.
 - images: view and queued image delivery.
 - clipboard: image paste, textual attachment labels, shortcuts, and retention.
 - sessions: configuration, saved histories, session switching, and restoration.

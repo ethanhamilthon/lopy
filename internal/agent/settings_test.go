@@ -126,3 +126,51 @@ func TestTimelineLineSettings(t *testing.T) {
 		})
 	}
 }
+
+func TestColorSettingsValidation(t *testing.T) {
+	base := Settings{Provider: "p", MaxContextTokens: 1, Providers: map[string]Provider{"p": {BaseURL: "https://example.com"}}}
+	for name, colors := range map[string]map[string]string{
+		"unknown name": {"nope": "#ffffff"},
+		"not a color":  {"accent": "red"},
+		"short hex":    {"accent": "#fff"},
+		"not hex":      {"accent": "#zzzzzz"},
+	} {
+		base.Colors = colors
+		err := validateSettings(base)
+		if err == nil || !strings.Contains(err.Error(), "color") {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	base.Colors = map[string]string{"accent": "#ABCDEF"}
+	if err := validateSettings(base); err != nil {
+		t.Fatalf("valid color rejected: %v", err)
+	}
+}
+
+func TestCompactionSettingsValidation(t *testing.T) {
+	base := Settings{Provider: "p", Providers: map[string]Provider{"p": {BaseURL: "https://example.com"}}}
+	base.MaxContextTokens = -1
+	if err := validateSettings(base); err == nil {
+		t.Fatal("negative token budget accepted")
+	}
+	base.MaxContextTokens, base.CompactKeepTurns = 0, -2
+	if err := validateSettings(base); err == nil {
+		t.Fatal("negative keep count accepted")
+	}
+	base.CompactKeepTurns = 0
+	if err := validateSettings(base); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRemovedChatCompletionsConfigFails(t *testing.T) {
+	dir := t.TempDir()
+	settings := "[providers.p]\nbase_url = \"https://example.com\"\napi_type = \"chat_completions\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "settings.toml"), []byte(settings), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := loadSettings(dir)
+	if err == nil || !strings.Contains(err.Error(), "removed chat_completions API") {
+		t.Fatalf("err = %v", err)
+	}
+}

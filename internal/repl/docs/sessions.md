@@ -16,6 +16,12 @@ JSONL file only after the first message, unless --resume selects an existing ses
 project-scoped session completions. Switching waits for active work to stop and
 isolates interpreter state; restored chats get a new prefix notification.
 
+/compact replaces everything before the last compact_keep_turns turns with one
+model-written summary and saves immediately; max_context_tokens (default 400000,
+0 disables) triggers the same compaction automatically before an oversized
+request. /reload re-reads settings.toml, prefix.py and system.md and restarts the
+interpreter while keeping the current session and its history.
+
 One client owns the session writer lock; other clients are read-only followers
 that reload committed snapshots once per second. No live stream is broadcast.
 Locks are released by the OS after crashes; reopen a follower to acquire released

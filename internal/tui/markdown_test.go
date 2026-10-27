@@ -21,7 +21,7 @@ func TestMarkdownStylesAndLists(t *testing.T) {
 			t.Errorf("missing %q in %q", want, plain)
 		}
 	}
-	for _, color := range []string{"255;121;198", "121;217;255", "255;216;102", "169;220;118", "171;157;242", "252;152;103", "138;173;255"} {
+	for _, color := range []string{"155;222;245", "121;217;255", "229;192;123", "135;147;168", "215;195;139", "240;158;172", "138;173;255"} {
 		if !strings.Contains(block, "38;2;"+color) {
 			t.Errorf("missing RGB %s in %q", color, block)
 		}

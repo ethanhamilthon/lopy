@@ -15,7 +15,7 @@ all third-party packages.
 
 The supported modules are partial. Their OS-backed calls, such as
 Path.exists(), os.environ and datetime.now(), raise NotImplementedError because
-Lopy provides no OS handler: use sh, read, write and grep instead. sys.platform
+Lopy provides no OS handler: use sh, read and write instead. sys.platform
 reports "monty" and sys.version reports "3.14.0 (Monty)", not CPython.
 
 Unsupported syntax and builtins: class definitions, del, the @ operator, input(),
@@ -34,7 +34,7 @@ in the middle; slice or filter data in Python before printing).
 sh(command) runs /bin/sh -c in the project working directory with the user's
 permissions and returns stdout, stderr, and returncode. Always check returncode.
 It is not an OS sandbox. External programs must already exist.
-read, write, patch, and grep provide file helpers; docs("files") explains their
+read, write and patch provide file helpers; docs("files") explains their
 contracts. docs(topic)
 returns built-in documentation; docs('index') lists topics.
 

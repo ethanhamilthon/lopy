@@ -27,7 +27,7 @@ func TestErrorNoticeStyleAndVisibility(t *testing.T) {
 			t.Fatalf("error not visible in one row at %d: %q", width, plain)
 		}
 		if width == 80 {
-			if !strings.Contains(block, "38;2;240;158;172") || !strings.Contains(block, "38;2;81;111;168") {
+			if !strings.Contains(block, "38;2;240;158;172") || !strings.Contains(block, "38;2;96;96;96") {
 				t.Fatalf("error icon/text colors missing: %q", block)
 			}
 			if strings.TrimSpace(plain) != "! · First line Second line Details" {

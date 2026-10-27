@@ -142,28 +142,24 @@ func Available(ctx context.Context, current string) string {
 		return ""
 	}
 	path := cacheFile()
-	if path != "" {
-		if data, err := os.ReadFile(path); err == nil {
-			var cached checkCache
-			fresh := json.Unmarshal(data, &cached) == nil && cached.Latest != "" && time.Since(cached.Checked) < cacheTTL
-			if fresh {
-				if Newer(current, cached.Latest) {
-					return cached.Latest
-				}
-				return ""
-			}
-		}
+	var cached checkCache
+	if data, err := os.ReadFile(path); err == nil && json.Unmarshal(data, &cached) == nil &&
+		cached.Latest != "" && time.Since(cached.Checked) < cacheTTL {
+		return newerTag(current, cached.Latest)
 	}
 	latest, err := Latest(ctx)
 	if err != nil {
 		return ""
 	}
-	if path != "" {
-		if data, err := json.Marshal(checkCache{Checked: time.Now(), Latest: latest}); err == nil {
-			_ = os.MkdirAll(filepath.Dir(path), 0o755)
-			_ = os.WriteFile(path, append(data, '\n'), 0o644)
-		}
+	if data, err := json.Marshal(checkCache{Checked: time.Now(), Latest: latest}); err == nil {
+		_ = os.MkdirAll(filepath.Dir(path), 0o755)
+		_ = os.WriteFile(path, append(data, '\n'), 0o644)
 	}
+	return newerTag(current, latest)
+}
+
+// newerTag returns latest when it is a later release than current.
+func newerTag(current, latest string) string {
 	if Newer(current, latest) {
 		return latest
 	}
@@ -171,10 +167,7 @@ func Available(ctx context.Context, current string) string {
 }
 
 func assetName() (string, error) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		return "", fmt.Errorf("no prebuilt binary for %s/%s; build from source", runtime.GOOS, runtime.GOARCH)
-	}
-	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" || runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
 		return "", fmt.Errorf("no prebuilt binary for %s/%s; build from source", runtime.GOOS, runtime.GOARCH)
 	}
 	return fmt.Sprintf("lopy_%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH), nil

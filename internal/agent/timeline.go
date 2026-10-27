@@ -107,15 +107,10 @@ func RecordsForItem(item json.RawMessage) []Record {
 			return []Record{{Kind: kind, Text: text}}
 		}
 	case v.Type == "reasoning":
-		var texts []string
-		for _, p := range v.Summary {
-			if p.Text != "" {
-				texts = append(texts, p.Text)
-			}
-		}
 		var parts []struct{ Text string }
 		_ = json.Unmarshal(v.Content, &parts)
-		for _, p := range parts {
+		var texts []string
+		for _, p := range append(v.Summary, parts...) {
 			if p.Text != "" {
 				texts = append(texts, p.Text)
 			}

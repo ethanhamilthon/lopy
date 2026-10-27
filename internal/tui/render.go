@@ -12,14 +12,19 @@ import (
 )
 
 var (
-	cyan       = lipgloss.Color("#79d9ff")
-	foreground = lipgloss.Color("#d5ddeb")
-	muted      = lipgloss.Color("#8794a8")
-	codeGray   = lipgloss.Color("#a0a0a0")
-	darkGray   = lipgloss.Color("#606060")
-	inputBlue  = lipgloss.Color("#8aadff")
-	mdKey      any
-	mdRenderer *glamour.TermRenderer
+	cyan           lipgloss.Color
+	foreground     lipgloss.Color
+	muted          lipgloss.Color
+	codeGray       lipgloss.Color
+	darkGray       lipgloss.Color
+	inputBlue      lipgloss.Color
+	assistantColor lipgloss.Color
+	errorColor     lipgloss.Color
+	warnColor      lipgloss.Color
+	infoColor      lipgloss.Color
+	markdownStyle  string
+	mdKey          any
+	mdRenderer     *glamour.TermRenderer
 )
 
 func eventColors(kind string) (bg, fg lipgloss.TerminalColor, label string) {
@@ -27,7 +32,7 @@ func eventColors(kind string) (bg, fg lipgloss.TerminalColor, label string) {
 	case "user":
 		return lipgloss.NoColor{}, foreground, ""
 	case "assistant":
-		return lipgloss.NoColor{}, lipgloss.Color("#9bdef5"), "*"
+		return lipgloss.NoColor{}, assistantColor, "*"
 	case "code":
 		return lipgloss.NoColor{}, codeGray, ">_"
 	case "reasoning":
@@ -35,11 +40,11 @@ func eventColors(kind string) (bg, fg lipgloss.TerminalColor, label string) {
 	case "output":
 		return lipgloss.NoColor{}, darkGray, "<"
 	case "error":
-		return lipgloss.NoColor{}, lipgloss.Color("#f09eac"), "error"
+		return lipgloss.NoColor{}, errorColor, "error"
 	case "notice":
 		return lipgloss.NoColor{}, muted, "!"
 	default:
-		return lipgloss.NoColor{}, lipgloss.Color("#d7c38b"), "info"
+		return lipgloss.NoColor{}, infoColor, "info"
 	}
 }
 
@@ -82,8 +87,8 @@ func renderEntry(e entry, width int, limits ...int) string {
 			}
 		}
 		if e.Kind == "error" {
-			icon := lipgloss.NewStyle().Foreground(lipgloss.Color("#f09eac")).Render("!")
-			message := lipgloss.NewStyle().Foreground(lipgloss.Color("#526fa8")).Render(" · " + text)
+			icon := lipgloss.NewStyle().Foreground(errorColor).Render("!")
+			message := lipgloss.NewStyle().Foreground(darkGray).Render(" · " + text)
 			return paint(ansi.Truncate("  "+icon+message, max(1, width), "…"), max(1, width), lipgloss.NoColor{}, lipgloss.NoColor{})
 		}
 		return paint(ansi.Truncate("  "+label+" · "+text, max(1, width), "…"), max(1, width), bg, fg)
@@ -142,7 +147,7 @@ func renderRail(text string, width int) string {
 	return strings.Join(lines, "\n")
 }
 func (m model) inputBlock() string {
-	if m.menuKind == "setup" && len(m.setup) == 3 {
+	if m.menuKind == "setup" && len(m.setup) == 2 {
 		return renderRail("API key: "+strings.Repeat("*", len([]rune(m.input.Value()))), m.width)
 	}
 	return renderRail(m.input.View(), m.width)
@@ -162,11 +167,11 @@ func (m *model) timeline() string {
 	out.WriteString(lipgloss.NewStyle().Foreground(cyan).Bold(true).Render("lopy. minimal coding agent."))
 	out.WriteString(lipgloss.NewStyle().Foreground(muted).Render(" v" + strings.TrimPrefix(Version, "v")))
 	if m.latest != "" {
-		out.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#e5c07b")).Render(" · v" + strings.TrimPrefix(m.latest, "v") + " available — run lopy update"))
+		out.WriteString(lipgloss.NewStyle().Foreground(warnColor).Render(" · v" + strings.TrimPrefix(m.latest, "v") + " available — run lopy update"))
 	}
 	out.WriteString("\n" + lipgloss.NewStyle().Foreground(muted).Render("Enter to send · Shift+Enter for newline · / for commands") + "\n")
 	if s := m.a.Settings(); s.Provider == "" || s.Model == "" {
-		out.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#e5c07b")).Render(m.setupHint()) + "\n")
+		out.WriteString(lipgloss.NewStyle().Foreground(warnColor).Render(m.setupHint()) + "\n")
 	}
 	out.WriteString("\n")
 	if len(m.cache) > len(m.entries) {

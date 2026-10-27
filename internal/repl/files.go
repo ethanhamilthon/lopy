@@ -9,7 +9,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -272,73 +271,4 @@ func patchText(args []any) (any, error) {
 		}
 	}
 	return len(paths), nil
-}
-func ignoredDir(name string) bool {
-	switch name {
-	case ".git", ".lopy", "node_modules", "vendor", ".venv", "venv", "__pycache__", "dist", "build", "target", ".next", ".cache":
-		return true
-	}
-	return false
-}
-func grepText(args []any) (any, error) {
-	pattern, p := args[0].(string)
-	root, r := args[1].(string)
-	limit, l := args[2].(int64)
-	glob, g := args[3].(string)
-	if !p || !r || !l || !g || limit < 1 || limit > 2000 {
-		return nil, fmt.Errorf("grep(pattern, path='.', limit=200, glob=''): expected strings and limit 1..2000")
-	}
-	if glob != "" {
-		if _, err := filepath.Match(glob, ""); err != nil {
-			return nil, err
-		}
-	}
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		return nil, err
-	}
-	matches := []any{}
-	size, truncated := 0, false
-	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			if path == root {
-				return err
-			}
-			return nil
-		}
-		if entry.IsDir() {
-			if path != root && ignoredDir(entry.Name()) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !entry.Type().IsRegular() {
-			return nil
-		}
-		if glob != "" {
-			if ok, _ := filepath.Match(glob, entry.Name()); !ok {
-				return nil
-			}
-		}
-		text, err := textFile(path)
-		if err != nil {
-			if path == root && !errors.Is(err, errNotText) {
-				return err
-			}
-			return nil
-		}
-		for i, line := range splitLines(text) {
-			if re.MatchString(line) {
-				line = clipLine(line, 500)
-				if len(matches) >= int(limit) || size+len(path)+len(line)+100 > 64*1024 {
-					truncated = true
-					return fs.SkipAll
-				}
-				matches = append(matches, map[string]any{"path": path, "line": i + 1, "text": line})
-				size += len(path) + len(line) + 100
-			}
-		}
-		return nil
-	})
-	return map[string]any{"matches": matches, "truncated": truncated}, err
 }

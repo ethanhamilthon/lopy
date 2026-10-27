@@ -10,7 +10,7 @@ import (
 	"lopy/internal/agent"
 )
 
-const markdownStyle = `{"document":{"margin":0},"heading":{"bold":true,"block_suffix":"\n"},"h1":{"prefix":"# ","color":"#ff79c6"},"h2":{"prefix":"## ","color":"#79d9ff"},"h3":{"prefix":"### ","color":"#ffd866"},"h4":{"color":"#a9dc76"},"h5":{"color":"#ab9df2"},"h6":{"color":"#fc9867"},"strong":{"bold":true},"emph":{"italic":true},"code":{"color":"#8aadff","prefix":"` + "`" + `","suffix":"` + "`" + `"},"code_block":{"margin":0},"list":{"level_indent":2},"item":{"block_prefix":"• "},"enumeration":{"block_prefix":". "},"block_quote":{"indent":1,"indent_token":"│ "},"link":{"underline":true,"color":"#8aadff","format":"\u2063{{.text}}\u2064"},"link_text":{"bold":true},"table":{"center_separator":"┼","column_separator":"│","row_separator":"─"}}`
+const markdownTemplate = `{"document":{"margin":0},"heading":{"bold":true,"block_suffix":"\n"},"h1":{"prefix":"# ","color":"%s"},"h2":{"prefix":"## ","color":"%s"},"h3":{"prefix":"### ","color":"%s"},"h4":{"color":"%s"},"h5":{"color":"%s"},"h6":{"color":"%s"},"strong":{"bold":true},"emph":{"italic":true},"code":{"color":"%s","prefix":"` + "`" + `","suffix":"` + "`" + `"},"code_block":{"margin":0},"list":{"level_indent":2},"item":{"block_prefix":"• "},"enumeration":{"block_prefix":". "},"block_quote":{"indent":1,"indent_token":"│ "},"link":{"underline":true,"color":"%s","format":"\u2063{{.text}}\u2064"},"link_text":{"bold":true},"table":{"center_separator":"┼","column_separator":"│","row_separator":"─"}}`
 
 func formatDuration(d time.Duration) string {
 	if d < time.Second {
